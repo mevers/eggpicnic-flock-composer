@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en-GB">
+<meta charset="utf-8">
+<title>Your Australian flock</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f5f0;color:#25362d;font:15px system-ui,sans-serif}main{max-width:1200px;margin:auto;padding:32px 24px}header{display:flex;justify-content:space-between;gap:20px;align-items:center}h1{font:normal 44px Georgia,serif;margin:0 0 8px}p{line-height:1.5;margin:8px 0}small,.muted{color:#657168}button,select,input{font:inherit;color:inherit}button,select{border:1px solid #c7cec6;border-radius:6px;background:#fff;padding:10px 13px}button{cursor:pointer}button:hover{background:#e8eee5}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #b27b35;outline-offset:3px}.primary{background:#294b39;color:white;border-color:#294b39}.primary:hover{background:#385e48}.toolbar{display:flex;gap:20px;align-items:end;margin:28px 0 20px}label{display:grid;gap:7px;font-size:13px}.toolbar .primary{margin-left:auto}.preview{position:relative;background:#e8e7e2;box-shadow:0 2px 14px #26372c16}canvas{display:block;width:100%;height:auto}#targets{position:absolute;inset:0;display:flex}.slot{position:absolute;top:0;height:100%;border:0;border-radius:0;background:transparent!important;padding:0;display:flex;align-items:center;justify-content:center}.slot span{border:1px dashed #8e9a8c;border-radius:50%;width:36px;height:36px;display:grid;place-items:center;color:#6c7969;background:#f7f7f0aa}.slot[aria-pressed=true],.slot.over{outline:2px solid #607957;outline-offset:-2px}.slot:hover{box-shadow:inset 0 0 0 1px #7a8d7180}.below{display:flex;justify-content:space-between;gap:16px;align-items:center;margin:12px 0 28px;min-height:40px}h2{font:normal 25px Georgia,serif;margin:0}.catalogue-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:20px 0 16px}input{border:1px solid #c7cec6;background:#fff;border-radius:6px;padding:11px;width:320px}#catalogue{max-height:480px;overflow-y:auto;padding:3px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}.bird{padding:0;overflow:hidden;text-align:left;background:#eeede7}.bird img{display:block;width:100%;height:120px;object-fit:contain;object-position:center bottom;padding:10px 10px 0}.bird span{display:block;background:#fff;padding:10px;font-size:12px;min-height:51px}.bird[aria-pressed=true]{outline:3px solid #607957;outline-offset:0}footer{margin-top:28px;border-top:1px solid #d5dbd0;padding-top:16px;font-size:12px}a{color:inherit}#status{font-size:13px}#remove{padding:7px 12px}
+</style>
+<main>
+<header><div><h1>Your Australian flock</h1><p class="muted">A little line-up of your favourite birds.</p></div><small>Approximate preview</small></header>
+<div class="toolbar"><label>Layout<select id="count" aria-label="Number of birds"></select></label><label>Print dimensions<select id="size" aria-label="Print dimensions"></select></label><button id="download" class="primary">Download PNG</button></div>
+<div class="preview"><canvas id="canvas" width="1500" height="630" aria-label="Flock artwork preview"></canvas><div id="targets" aria-label="Bird positions"></div></div>
+<div class="below"><div><div id="status" role="status" aria-live="polite">Loading artwork…</div><small>Drag birds into the preview, or select a bird and then a position.</small></div><button id="remove" hidden>Remove bird</button></div>
+<div class="catalogue-head"><h2>Choose your birds <small id="total"></small></h2><input id="search" type="search" placeholder="Search birds" aria-label="Search birds"></div>
+<div id="catalogue"></div><p id="empty" hidden>No birds match your search.</p>
+<footer>Artwork © Eggpicnic. <a href="https://eggpicnic.com/create-your-own-flock-australia/" target="_blank" rel="noopener">View the original collection</a></footer>
+</main>
+<script src="images/catalogue.js"></script>
+<script>
+'use strict';
+const sizes={5:[[81.6,35.4],[100,42]],6:[[120,43]],7:[[140,43]],8:[[160,43]],9:[[180,43]],10:[[200,43]]};
+const $=id=>document.getElementById(id);
+let flock=Array(5).fill(null),chosen=null,active=null,drag=null;
+const count=$('count'),size=$('size'),canvas=$('canvas');
+for(const n of Object.keys(sizes))count.add(new Option(`${n} birds`,n));
+function updateSizes(){size.replaceChildren();for(const [w,h] of sizes[flock.length])size.add(new Option(`${w} × ${h} cm`,`${w},${h}`));if(flock.length===5)size.value='100,42'}
+function dimensions(){return size.value.split(',').map(Number)}
+// Relative scales measured from the five-bird reference photographs.
+// Unpictured birds retain their source scale; this is an approximate proof.
+const calibration={"Australian White Ibis": 1.1, "Bourke\u2019s Parrot": 0.9, "Gang-gang Cockatoo female (Small)": 1.04, "King Parrot (Female)": 0.93, "Peregrine Falcon": 1.22, "Pink Cockatoo": 1.21, "Purple Swamphen": 0.93, "Rainbow Lorikeet": 0.96, "Sacred Kingfisher": 0.9, "Welcome Swallow": 0.91};
+// Fit the complete row without stretching any bird.
+function layout(selection,width,height){
+ const metrics=selection.map(id=>id===null?{w:.65,h:.85}:{w:birds[id].w/birds[id].sourceH*(calibration[birds[id].name]||1),h:birds[id].h/birds[id].sourceH*(calibration[birds[id].name]||1)});
+ const gap=height*.025,margin=width*.025;
+ // Keep Pink Cockatoo near two-thirds of the canvas height, regardless of its neighbours.
+ const scale=Math.min(height*.62,(width-2*margin-gap*(metrics.length-1))/metrics.reduce((s,b)=>s+b.w,0));
+ const total=metrics.reduce((s,b)=>s+b.w*scale,0)+gap*(metrics.length-1);let x=(width-total)/2;
+ return metrics.map(b=>{const box={x,y:height-b.h*scale,w:b.w*scale,h:b.h*scale};x+=box.w+gap;return box});
+}
+function draw(context,width,height){context.fillStyle='#e8e7e2';context.fillRect(0,0,width,height);const boxes=layout(flock,width,height);flock.forEach((id,i)=>{if(id!==null){const b=boxes[i];context.drawImage(images[id],b.x,b.y,b.w,b.h)}});return boxes}
+function render(){
+ const [w,h]=dimensions();canvas.height=Math.round(canvas.width*h/w);const boxes=draw(canvas.getContext('2d'),canvas.width,canvas.height);$('targets').replaceChildren();
+ boxes.forEach((box,i)=>{const left=i? (boxes[i-1].x+boxes[i-1].w+box.x)/2:0,right=i===boxes.length-1?canvas.width:(box.x+box.w+boxes[i+1].x)/2;
+ const button=document.createElement('button');button.className='slot';button.style.left=`${100*left/canvas.width}%`;button.style.width=`${100*(right-left)/canvas.width}%`;button.setAttribute('aria-label',`Position ${i+1}: ${flock[i]===null?'empty':birds[flock[i]].name}`);button.setAttribute('aria-pressed',String(active===i));button.draggable=flock[i]!==null;
+ if(flock[i]===null){const number=document.createElement('span');number.textContent=i+1;button.append(number)}
+ button.onclick=()=>{if(chosen!==null){flock[i]=chosen;chosen=null;updateSelection()}active=i;render()};
+ button.ondragstart=e=>{chosen=null;active=i;updateSelection();drag={slot:i};e.dataTransfer.setData('text/plain',String(i));e.dataTransfer.effectAllowed='move'};
+ button.ondragover=e=>{e.preventDefault();button.classList.add('over')};button.ondragleave=()=>button.classList.remove('over');button.ondrop=e=>{e.preventDefault();if('slot'in drag)[flock[i],flock[drag.slot]]=[flock[drag.slot],flock[i]];else flock[i]=drag.bird;drag=null;chosen=null;active=i;updateSelection();render()};button.ondragend=()=>{drag=null;button.classList.remove('over')};$('targets').append(button)});
+ $('remove').hidden=active===null||flock[active]===null;const filled=flock.filter(id=>id!==null).length;
+ $('status').textContent=chosen!==null?`${birds[chosen].name} selected. Choose a position.`:`${filled} of ${flock.length} birds placed.`;
+}
+function updateSelection(){document.querySelectorAll('.bird').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.id===chosen)))}
+function catalogue(){const query=$('search').value.toLocaleLowerCase();let visible=0;document.querySelectorAll('.bird').forEach(b=>{b.hidden=!birds[+b.dataset.id].name.toLocaleLowerCase().includes(query);if(!b.hidden)visible++});$('total').textContent=`(${visible})`;$('empty').hidden=visible!==0}
+for(const [id,bird] of birds.entries()){
+ const button=document.createElement('button');button.className='bird';button.dataset.id=id;button.draggable=true;button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',`Select ${bird.name}`);
+ const img=images[id];img.alt='';img.draggable=false;img.onload=()=>render();
+ const name=document.createElement('span');name.textContent=bird.name;button.append(img,name);button.onclick=()=>{chosen=chosen===id?null:id;active=null;updateSelection();render()};button.ondragstart=e=>{chosen=null;active=null;updateSelection();drag={bird:id};e.dataTransfer.setData('text/plain',bird.name);e.dataTransfer.effectAllowed='copy'};button.ondragend=()=>drag=null;$('catalogue').append(button);
+}
+count.onchange=()=>{const n=+count.value;flock=Array.from({length:n},(_,i)=>flock[i]??null);active=null;updateSizes();render()};
+size.onchange=render;$('search').oninput=catalogue;$('remove').onclick=()=>{flock[active]=null;render()};
+$('download').onclick=()=>{const [w,h]=dimensions(),output=document.createElement('canvas');output.width=3000;output.height=Math.round(3000*h/w);draw(output.getContext('2d'),output.width,output.height);output.toBlob(blob=>{const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`flock-${flock.length}-birds-${w}x${h}cm.png`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000)},'image/png')};
+updateSizes();catalogue();render();
+</script>
+</html>
